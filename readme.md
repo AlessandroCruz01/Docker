@@ -428,7 +428,6 @@ docker volume ls
 ```
 
 ## Dockerfile e Build de Imagens
-
 ### O que é um Dockerfile?
 `Dockerfile` é um arquivo de texto com instruções para montar uma imagem Docker personalizada.
 
@@ -480,3 +479,206 @@ docker run -d --name minha-api-container -p 3000:3000 minha-api:1.0
 - Copie primeiro arquivos de dependências (`package.json`, `requirements.txt`) para aproveitar cache.
 - Evite colocar segredos no `Dockerfile`.
 - Use `.dockerignore` para não enviar arquivos desnecessários no contexto de build.
+
+## Deixando de ser apenas um usuário
+
+### Diferença entre Container e Imagem
+Você já viu essa diferença antes, mas aqui vale fixar com foco em uso profissional:
+
+- Imagem: template imutável, versionável e distribuível.
+- Container: processo em execução criado a partir de uma imagem.
+
+O que isso muda na prática:
+- Você versiona e compartilha imagem.
+- Você inicia, para e remove container.
+- Problema de runtime normalmente e investigado no container.
+- Problema de empacotamento normalmente e corrigido na imagem (Dockerfile).
+
+Resumo mental:
+- Imagem = artefato de entrega.
+- Container = instancia de execucao.
+
+### Entendendo melhor as imagens
+Uma imagem Docker e formada por camadas (layers). Cada instrucao relevante do Dockerfile cria uma camada.
+
+Exemplo:
+- `FROM node:20-alpine` cria a base.
+- `COPY package*.json ./` cria nova camada.
+- `RUN npm install` cria outra camada.
+
+Vantagens das camadas:
+- Reuso de cache no build (mais velocidade).
+- Download incremental (menos dados).
+- Versionamento mais eficiente.
+
+Comando util para inspecionar historico da imagem:
+```bash
+docker history minha-api:1.0
+```
+
+Comando para ver detalhes tecnicos:
+```bash
+docker image inspect minha-api:1.0
+```
+
+### Comandos básicos de gerenciamento de imagem
+Comandos mais usados no dia a dia:
+
+```bash
+docker image ls
+docker pull nginx:latest
+docker image rm nginx:latest
+docker image prune
+docker tag minha-api:1.0 minha-api:latest
+```
+
+O que cada um faz:
+- `docker image ls`: lista imagens locais.
+- `docker image pull`: baixa imagem de um registry.
+- `docker image rm`: remove imagem local.
+- `docker image prune`: remove imagens dangling (sem tag em uso).
+- `docker image tag`: cria nova tag para a mesma imagem.
+- `docker image inspect`: pega informações sobre aquela imagem.
+- `docker image build`: gera uma imagem.
+- `docker image push`: publicar em um registry local ou em um registry do docker hub.
+
+Boas praticas:
+- Prefira tags explicitas em ambiente de producao (ex.: `1.0.3`) em vez de apenas `latest`.
+- Limpe imagens nao usadas periodicamente para economizar disco.
+
+### Docker Hub x Docker Registry
+Os dois armazenam imagens, mas com objetivos diferentes.
+
+Docker Hub:
+- Servico publico oficial mais comum.
+- Bom para estudo, projetos abertos e distribuicao simples.
+
+Docker Registry (generico/privado):
+- Solucao para hospedar imagens internamente (empresa).
+- Controle de acesso, politicas de seguranca e compliance.
+
+Exemplos:
+- Publico: `docker.io/library/nginx`
+- Privado: `registry.minhaempresa.com/minha-api:1.0`
+
+Regra pratica:
+- Projeto pessoal/open-source: Docker Hub.
+- Projeto corporativo: registry privado.
+
+### Meu Primeiro build
+Vamos criar um primeiro build completo de forma guiada.
+
+Passo 1: criar um `Dockerfile` simples
+```dockerfile
+FROM nginx:alpine
+COPY . /usr/share/nginx/html
+```
+
+Passo 2: gerar imagem
+```bash
+docker build -t meu-site:1.0 .
+```
+
+Passo 3: executar container
+```bash
+docker run -d --name meu-site-container -p 8085:80 meu-site:1.0
+```
+
+Passo 4: validar
+- Abra `http://localhost:8085`.
+- Verifique logs com `docker logs meu-site-container`.
+
+### Uso das instruções de preparação
+Instrucoes de preparacao definem base e ambiente inicial da imagem.
+
+Principais:
+- `FROM`: define a base.
+- `WORKDIR`: define pasta de trabalho.
+- `ENV`: define variaveis de ambiente.
+- `ARG`: define argumentos de build.
+
+Exemplo:
+```dockerfile
+FROM python:3.12-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ARG APP_VERSION=1.0.0
+```
+
+Quando usar:
+- Sempre no inicio do Dockerfile.
+- Para padronizar ambiente antes de copiar codigo ou instalar dependencias.
+
+### Uso das instruções de povoamento
+Instrucoes de povoamento colocam arquivos e dependencias dentro da imagem.
+
+Principais:
+- `COPY`: copia arquivos do host.
+- `ADD`: copia arquivos e permite recursos extras (como URL/tar), mas use com criterio.
+- `RUN`: executa comandos de instalacao/configuracao no build.
+
+Exemplo (Node.js):
+```dockerfile
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY . .
+```
+
+Dica importante de performance:
+- Copie primeiro os arquivos de dependencias.
+- Execute instalacao.
+- Copie o restante do codigo depois.
+
+Isso melhora o cache quando voce altera apenas codigo-fonte.
+
+### Uso das instruções de execução do Container
+Essas instrucoes definem como o container se comporta em runtime.
+
+Principais:
+- `EXPOSE`: documenta porta da aplicacao.
+- `CMD`: comando padrao ao iniciar container.
+- `ENTRYPOINT`: comando principal fixo do container.
+
+Exemplo:
+```dockerfile
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+Diferenca rapida:
+- `CMD` pode ser sobrescrito facilmente no `docker run`.
+- `ENTRYPOINT` normalmente define o executavel principal da imagem.
+
+Exemplo com sobrescrita de CMD:
+```bash
+docker run --rm minha-api:1.0 npm test
+```
+
+### Enviar imagens para o Docker Hub
+Fluxo basico para publicar sua imagem:
+
+1. Fazer login:
+```bash
+docker login
+```
+
+2. Criar tag no formato `usuario/repositorio:tag`:
+```bash
+docker tag minha-api:1.0 seuusuario/minha-api:1.0
+```
+
+3. Enviar para o Hub:
+```bash
+docker push seuusuario/minha-api:1.0
+```
+
+4. Testar pull em outro ambiente:
+```bash
+docker pull seuusuario/minha-api:1.0
+```
+
+Boas praticas de publicacao:
+- Use tags semanticas (`1.0.0`, `1.1.0`, `2.0.0`).
+- Mantenha um `README` do repositorio no Docker Hub com instrucoes de uso.
+- Evite enviar imagem com segredos embutidos.

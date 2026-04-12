@@ -307,6 +307,53 @@ Teste rápido:
 Dica:
 - Para listar mapeamentos de portas: `docker ps`.
 
+### Mapear diretórios para containers
+Mapear diretórios permite compartilhar arquivos entre sua máquina e o container.
+
+Isso é muito útil para:
+- Desenvolvimento local (editar código no host e refletir no container).
+- Persistir dados fora do ciclo de vida do container.
+- Compartilhar arquivos de configuração.
+
+Existem 2 formas mais comuns:
+
+1. Bind mount (pasta local -> pasta no container)
+- Usa um caminho real da sua máquina.
+
+Exemplo no Windows:
+```bash
+docker run -d --name site-html -p 8082:80 -v C:/Users/aless/Desktop/Docker/site:/usr/share/nginx/html nginx
+```
+
+Nesse exemplo:
+- `C:/Users/aless/Desktop/Docker/site` = pasta no host.
+- `/usr/share/nginx/html` = pasta dentro do container.
+- Tudo que você editar na pasta local aparece no Nginx.
+
+2. Volume nomeado (gerenciado pelo Docker)
+- Ideal para dados de banco e persistência de longo prazo.
+
+Exemplo:
+```bash
+docker volume create dados-mysql
+docker run -d --name mysql-db -e MYSQL_ROOT_PASSWORD=123456 -v dados-mysql:/var/lib/mysql mysql:8
+```
+
+Nesse caso:
+- O Docker gerencia onde os dados ficam no host.
+- Mesmo removendo o container, os dados continuam no volume.
+
+Comandos úteis para inspeção:
+```bash
+docker inspect site-html
+docker volume ls
+docker volume inspect dados-mysql
+```
+
+Resumo rápido:
+- Bind mount: melhor para código e arquivos do projeto.
+- Volume nomeado: melhor para dados persistentes (ex.: banco de dados).
+
 ### Servidor Web em background
 Rodar em background significa deixar o container executando sem travar o terminal.
 

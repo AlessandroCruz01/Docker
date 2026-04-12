@@ -354,6 +354,8 @@ Resumo rápido:
 - Bind mount: melhor para código e arquivos do projeto.
 - Volume nomeado: melhor para dados persistentes (ex.: banco de dados).
 
+### Manipulação de Container e modo daemon
+
 ### Servidor Web em background
 Rodar em background significa deixar o container executando sem travar o terminal.
 
@@ -424,3 +426,57 @@ docker image ls
 docker network ls
 docker volume ls
 ```
+
+## Dockerfile e Build de Imagens
+
+### O que é um Dockerfile?
+`Dockerfile` é um arquivo de texto com instruções para montar uma imagem Docker personalizada.
+
+Pense nele como uma receita com passos sequenciais:
+- Escolher imagem base.
+- Copiar arquivos.
+- Instalar dependências.
+- Definir comando de inicialização.
+
+Exemplo simples (Node.js):
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+### Principais instruções
+- `FROM`: define a imagem base.
+- `WORKDIR`: define diretório de trabalho dentro da imagem.
+- `COPY`: copia arquivos do host para a imagem.
+- `RUN`: executa comandos durante o build.
+- `EXPOSE`: documenta a porta usada pela aplicação.
+- `CMD`: comando padrão executado quando o container inicia.
+
+### Build da imagem
+Para gerar uma imagem a partir do `Dockerfile`:
+
+```bash
+docker build -t minha-api:1.0 .
+```
+
+Detalhes:
+- `-t`: aplica nome e tag à imagem.
+- `.`: contexto de build (pasta atual).
+
+### Executando a imagem criada
+Depois do build:
+
+```bash
+docker run -d --name minha-api-container -p 3000:3000 minha-api:1.0
+```
+
+### Boas práticas iniciais
+- Use imagens base leves, como `alpine`, quando fizer sentido.
+- Copie primeiro arquivos de dependências (`package.json`, `requirements.txt`) para aproveitar cache.
+- Evite colocar segredos no `Dockerfile`.
+- Use `.dockerignore` para não enviar arquivos desnecessários no contexto de build.

@@ -682,3 +682,138 @@ Boas praticas de publicacao:
 - Use tags semanticas (`1.0.0`, `1.1.0`, `2.0.0`).
 - Mantenha um `README` do repositorio no Docker Hub com instrucoes de uso.
 - Evite enviar imagem com segredos embutidos.
+
+## Redes
+
+### Visão Geral e Tipos de Redes
+Rede Docker define como containers se comunicam entre si e com o mundo externo.
+
+Em termos simples:
+- Sem rede: container isolado de qualquer comunicacao.
+- Bridge: rede padrao para comunicacao entre containers no mesmo host.
+- Host: container compartilha a rede do sistema host.
+
+Comando para listar redes existentes:
+```bash
+docker network ls
+```
+
+Redes padrao normalmente criadas pelo Docker:
+- `bridge`: rede default para containers.
+- `host`: usa pilha de rede do host.
+- `none`: sem interface de rede util para trafego externo.
+
+Comando para inspecionar detalhes de uma rede:
+```bash
+docker network inspect bridge
+```
+
+### Rede Tipo None (Sem Rede)
+No modo `none`, o container nao recebe conectividade externa.
+
+Caracteristicas:
+- Sem acesso a internet.
+- Sem comunicacao com outros containers.
+- Util para execucoes isoladas e cenarios de seguranca.
+
+Exemplo:
+```bash
+docker run --rm --network none alpine ip addr
+```
+
+O que observar:
+- Geralmente apenas a interface `lo` (loopback) aparece.
+
+Cenario comum:
+- Processamento de arquivos locais sem necessidade de rede.
+
+### Rede Tipo Bridge
+`bridge` e o tipo mais usado no dia a dia para desenvolvimento local.
+
+Como funciona:
+- Cada container recebe um IP interno.
+- Containers na mesma rede podem se comunicar.
+- Com rede customizada, containers resolvem nomes por DNS interno.
+
+Exemplo rapido com rede bridge customizada:
+```bash
+docker network create app-net
+
+docker run -d --name api --network app-net nginx
+docker run -it --rm --name client --network app-net alpine sh
+```
+
+Dentro do `client`, voce pode testar:
+```bash
+ping api
+```
+
+Vantagens da bridge customizada:
+- Isolamento entre grupos de containers.
+- Descoberta de servicos por nome (`api`, `db`, `redis`).
+- Melhor organizacao para ambientes com varios projetos.
+
+Conectar um container em uma rede existente:
+```bash
+docker network connect app-net meu-container
+```
+
+Desconectar:
+```bash
+docker network disconnect app-net meu-container
+```
+
+### Rede Tipo Host
+No modo `host`, o container usa diretamente a interface de rede do host.
+
+Implicacoes:
+- Nao ha NAT de porta como no `-p` da bridge.
+- Menos isolamento de rede.
+- Pode ter ganho de performance em alguns cenarios.
+
+Exemplo:
+```bash
+docker run --rm --network host nginx
+```
+
+Importante:
+- Em Linux, o comportamento e direto e previsivel.
+- Em Docker Desktop (Windows/macOS), o suporte ao modo host pode variar conforme versao e configuracao.
+
+Quando considerar `host`:
+- Aplicacoes com requisitos de baixa latencia.
+- Ferramentas de monitoramento que precisam enxergar a rede do host.
+
+Resumo pratico:
+- `none`: maximo isolamento.
+- `bridge`: equilibrio entre isolamento e comunicacao.
+- `host`: maximo acesso a rede do host, com menos isolamento.
+
+### Boas Práticas com Redes Docker
+- Prefira redes `bridge` customizadas em vez da `bridge` padrao para projetos reais.
+- Evite expor portas desnecessarias com `-p`.
+- Mantenha containers do mesmo contexto na mesma rede (ex.: `frontend`, `api`, `db`).
+- Use nomes de containers servico-orientados (`api`, `postgres`, `redis`) para facilitar DNS interno.
+- Inspecione redes regularmente para diagnostico: `docker network inspect <nome-da-rede>`.
+
+### Exemplo Completo: API + Banco na Mesma Rede
+```bash
+docker network create projeto-net
+
+docker run -d \
+	--name postgres \
+	--network projeto-net \
+	-e POSTGRES_PASSWORD=123456 \
+	postgres:16
+
+docker run -d \
+	--name api \
+	--network projeto-net \
+	-p 3000:3000 \
+	minha-api:1.0
+```
+
+Nesse cenario:
+- A API pode acessar o banco usando `postgres` como host.
+- Apenas a API expoe porta para fora.
+- O banco permanece acessivel somente dentro da rede interna.

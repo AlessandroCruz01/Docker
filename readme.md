@@ -1003,3 +1003,227 @@ Boas práticas:
 - Utilize `healthcheck` para serviços críticos como bancos de dados.
 - Não coloque segredos diretamente no `compose.yaml`; use variáveis de ambiente ou secrets.
 - Mantenha o `compose.yaml` versionado junto ao código do projeto.
+
+## Projeto de Cadastro Simples
+
+### Estrutura Inicial
+Vamos construir um projeto simples de cadastro de usuários utilizando Docker Compose. O objetivo é aplicar na prática os conceitos vistos até aqui: Dockerfile, volumes, redes e orquestração com Compose.
+
+Tecnologias usadas:
+- **Backend**: Node.js com Express.
+- **Banco de dados**: PostgreSQL.
+- **Frontend**: HTML estático servido pelo Nginx.
+
+Estrutura de pastas do projeto:
+```
+cadastro/
+├── backend/
+│   ├── Dockerfile
+│   ├── package.json
+│   └── index.js
+├── frontend/
+│   └── index.html
+└── compose.yaml
+```
+
+Arquivo `backend/index.js` — API simples de cadastro:
+```js
+const express = require('express');
+const { Pool } = require('pg');
+
+const app = express();
+app.use(express.json());
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+app.get('/usuarios', async (req, res) => {
+  const result = await pool.query('SELECT * FROM usuarios ORDER BY id');
+  res.json(result.rows);
+});
+
+app.post('/usuarios', async (req, res) => {
+  const { nome, email } = req.body;
+  const result = await pool.query(
+    'INSERT INTO usuarios (nome, email) VALUES ($1, $2) RETURNING *',
+    [nome, email]
+  );
+  res.status(201).json(result.rows[0]);
+});
+
+app.listen(3000, () => console.log('API rodando na porta 3000'));
+```
+
+Arquivo `backend/package.json`:
+```json
+{
+  "name": "cadastro-api",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^4.18.2",
+    "pg": "^8.11.3"
+  }
+}
+```
+
+Arquivo `backend/Dockerfile`:
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package.json ./
+RUN npm install
+COPY . .
+EXPOSE 3000
+CMD ["node", "index.js"]
+```
+
+Arquivo `frontend/index.html` — formulário de cadastro:
+```html
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Cadastro</title>
+</head>
+<body>
+  <h1>Cadastro de Usuários</h1>
+  <form id="form">
+    <input type="text" id="nome" placeholder="Nome" required>
+    <input type="email" id="email" placeholder="Email" required>
+    <button type="submit">Cadastrar</button>
+  </form>
+  <ul id="lista"></ul>
+
+  <script>
+    const API = 'http://localhost:3000';
+
+    async function carregarUsuarios() {
+      const res = await fetch(`${API}/usuarios`);
+      const usuarios = await res.json();
+      document.getElementById('lista').innerHTML =
+        usuarios.map(u => `<li>${u.nome} — ${u.email}</li>`).join('');
+    }
+
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const nome = document.getElementById('nome').value;
+      const email = document.getElementById('email').value;
+      await fetch(`${API}/usuarios`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome, email }),
+      });
+      e.target.reset();
+      carregarUsuarios();
+    });
+
+    carregarUsuarios();
+  </script>
+</body>
+</html>
+```
+
+### Configurando ambiente com Docker Compose
+Com a estrutura criada, o próximo passo é orquestrar todos os serviços com o `compose.yaml`.
+
+Arquivo `compose.yaml`:
+```yaml
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: cadastro
+      POSTGRES_PASSWORD: senha123
+      POSTGRES_DB: cadastrodb
+    volumes:
+      - dados-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cadastro"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://cadastro:senha123@postgres:5432/cadastrodb
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+
+volumes:
+  dados-postgres:
+```
+
+O que cada parte faz:
+- `postgres`: banco de dados com volume persistente e healthcheck.
+- `backend`: API Node.js que só sobe após o banco estar pronto.
+- `frontend`: Nginx servindo o HTML estático via bind mount.
+
+Inicializando o banco de dados:
+Antes de usar a API, é necessário criar a tabela `usuarios`. Uma forma simples é executar o comando após os containers estarem de pé:
+
+```bash
+docker compose up -d
+
+docker compose exec postgres psql -U cadastro -d cadastrodb -c \
+  "CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT NOT NULL);"
+```
+
+Verificando se tudo subiu corretamente:
+```bash
+docker compose ps
+docker compose logs backend
+```
+
+### Finalizando Cadastro
+Com tudo configurado, o projeto está pronto para uso.
+
+Testando pelo navegador:
+- Acesse `http://localhost:8080` para ver o formulário.
+- Preencha nome e email e clique em **Cadastrar**.
+- A lista de usuários é atualizada automaticamente.
+
+Testando a API diretamente:
+```bash
+# Cadastrar usuário
+curl -X POST http://localhost:3000/usuarios \
+  -H "Content-Type: application/json" \
+  -d '{"nome": "João", "email": "joao@email.com"}'
+
+# Listar usuários
+curl http://localhost:3000/usuarios
+```
+
+Encerrando o ambiente:
+```bash
+# Parar sem remover dados
+docker compose down
+
+# Parar e remover volume (apaga dados do banco)
+docker compose down -v
+```
+
+Reconstruindo após mudança no código:
+```bash
+docker compose up -d --build
+```
+
+Resumo do que foi aplicado neste projeto:
+- `Dockerfile` para empacotar a API Node.js.
+- `compose.yaml` para orquestrar backend, banco e frontend.
+- Volume nomeado para persistir dados do PostgreSQL.
+- Bind mount para servir o frontend sem rebuild.
+- `healthcheck` e `depends_on` para garantir ordem de inicialização.
+- Rede interna automática do Compose para comunicação entre serviços.

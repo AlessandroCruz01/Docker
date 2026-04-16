@@ -817,3 +817,189 @@ Nesse cenario:
 - A API pode acessar o banco usando `postgres` como host.
 - Apenas a API expoe porta para fora.
 - O banco permanece acessivel somente dentro da rede interna.
+
+## Coordenando Múltiplos Containers
+
+### Introdução
+Gerenciar um único container é simples. O desafio real aparece quando sua aplicação é composta por múltiplos serviços: API, banco de dados, cache, fila de mensagens, etc.
+
+Problemas comuns sem orquestração:
+- Subir e parar cada container manualmente é trabalhoso e propenso a erros.
+- Garantir a ordem de inicialização (banco antes da API, por exemplo) é difícil.
+- Recriar o ambiente em outra máquina exige repetir todos os comandos.
+
+A solução para esse problema é o **Docker Compose**.
+
+Docker Compose permite descrever toda a infraestrutura de um projeto em um único arquivo `compose.yaml` (ou `docker-compose.yml`) e gerenciar tudo com comandos simples.
+
+### Gerenciamento de Micro-Service
+Em arquiteturas de microsserviços, cada serviço é uma aplicação independente com sua própria responsabilidade:
+- Serviço de autenticação.
+- Serviço de pagamentos.
+- Serviço de notificações.
+- Etc.
+
+Cada um deles pode rodar em seu próprio container, com sua própria imagem, porta e configuração.
+
+Desafios do gerenciamento:
+- Como garantir que todos sobem juntos?
+- Como fazer um serviço encontrar o outro pela rede?
+- Como compartilhar variáveis de ambiente de forma organizada?
+
+Docker Compose resolve esses problemas ao definir todos os serviços, redes e volumes em um único arquivo declarativo.
+
+### Docker Compose
+
+#### O que é Docker Compose?
+Docker Compose é uma ferramenta para definir e executar aplicações com múltiplos containers.
+
+Com um único arquivo `compose.yaml`, você descreve:
+- Quais serviços existem.
+- Como cada um deve ser construído ou qual imagem usar.
+- Quais portas expor.
+- Quais volumes e redes usar.
+- Variáveis de ambiente.
+- Dependências entre serviços.
+
+#### Estrutura básica do compose.yaml
+```yaml
+services:
+  nome-do-servico:
+    image: imagem:tag
+    ports:
+      - "PORTA_HOST:PORTA_CONTAINER"
+    environment:
+      - VARIAVEL=valor
+    volumes:
+      - nome-volume:/caminho/no/container
+    depends_on:
+      - outro-servico
+
+volumes:
+  nome-volume:
+```
+
+#### Exemplo completo: API + PostgreSQL + Redis
+```yaml
+services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgres://user:senha@postgres:5432/appdb
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=senha
+      - POSTGRES_DB=appdb
+    volumes:
+      - dados-postgres:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+
+volumes:
+  dados-postgres:
+```
+
+Nesse exemplo:
+- `api` depende de `postgres` e `redis` (sobe depois deles).
+- `postgres` persiste dados em um volume nomeado.
+- Todos os serviços se comunicam pelo nome do serviço (`postgres`, `redis`) como hostname, pois o Compose cria automaticamente uma rede interna.
+
+#### Comandos principais do Docker Compose
+```bash
+# Subir todos os serviços em background
+docker compose up -d
+
+# Ver status dos serviços
+docker compose ps
+
+# Ver logs de todos os serviços
+docker compose logs
+
+# Ver logs de um serviço específico
+docker compose logs api
+
+# Parar e remover containers
+docker compose down
+
+# Parar e remover containers + volumes
+docker compose down -v
+
+# Reconstruir imagens antes de subir
+docker compose up -d --build
+
+# Reiniciar um serviço específico
+docker compose restart api
+
+# Executar comando dentro de um serviço em execução
+docker compose exec api sh
+```
+
+#### depends_on e ordem de inicialização
+A opção `depends_on` garante que um serviço só inicia após os serviços listados estarem no estado `started`.
+
+Atenção importante:
+- `depends_on` não garante que o serviço dependente está *pronto* para receber conexões, apenas que o container iniciou.
+- Para aguardar o serviço estar realmente disponível, use `healthcheck` combinado com `condition: service_healthy`.
+
+Exemplo com healthcheck:
+```yaml
+services:
+  api:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_PASSWORD=senha
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+```
+
+#### Variáveis de ambiente com arquivo .env
+Em vez de declarar variáveis diretamente no `compose.yaml`, você pode usar um arquivo `.env` na mesma pasta.
+
+Arquivo `.env`:
+```
+POSTGRES_USER=user
+POSTGRES_PASSWORD=minhasenha
+POSTGRES_DB=appdb
+```
+
+`compose.yaml` referenciando o `.env`:
+```yaml
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+```
+
+Boas práticas:
+- Adicione `.env` ao `.gitignore` para não vazar senhas no repositório.
+- Mantenha um `.env.example` com os nomes das variáveis (sem os valores reais) para documentação.
+
+#### Boas Práticas com Docker Compose
+- Prefira `compose.yaml` como nome do arquivo (padrão mais recente).
+- Sempre defina volumes nomeados para dados persistentes (bancos de dados, uploads).
+- Use redes customizadas se precisar isolar grupos de serviços.
+- Utilize `healthcheck` para serviços críticos como bancos de dados.
+- Não coloque segredos diretamente no `compose.yaml`; use variáveis de ambiente ou secrets.
+- Mantenha o `compose.yaml` versionado junto ao código do projeto.

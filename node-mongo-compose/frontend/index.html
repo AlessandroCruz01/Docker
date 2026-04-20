@@ -4,11 +4,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css"
+        integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <title>Frontend Docker</title>
 </head>
 
 <body>
-    <h1>Frontend</h1>
+    <h1>Cadastro Simples</h1>
+    <hr>
+    <div>
+        <input name="id" type="hidden">
+        <div class="form-group">
+            <label for="name">Nome</label>
+            <input name="name" type="text" class="form-control" id="name" placeholder="Digite o nome">
+        </div>
+        <button class="btn btn-primary" save>Salvar</button>
+
+        <table class="table" id="clients">
+            <thead>
+                <th>Nome</th>
+                <th>Ações</th>
+            </thead>
+            <tbody id="clientsRows">
+
+            </tbody>
+
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+            <script>
+                const api = 'http://localhost:3000';
+
+                const createButton = (label, type) => {
+                    return $('<button>')
+                        .addClass(`btn btn-${type}`)
+                        .html(label);
+                }
+
+                const renderRows = clients => {
+                    const rows = clients.map(client => {
+                        const updateButton = createButton('Editar', 'warning').click(() => editClient(client));
+                        const removeButton = createButton('Remover', 'danger').click(() => removeClient(client));
+
+                        return $('<tr>')
+                            .append($('<td>').html(client.name))
+                            .append($('<td>').append(updateButton).append(removeButton))
+                    });
+
+                    $('#clientsRows').html(rows);
+                }
+
+                const removeClient = client => {
+                    $.ajax({
+                        method: 'DELETE',
+                        url: `${api}/clients/${client._id}`,
+                        success: () => {
+                            getClients()
+                        }
+                    })
+                }
+
+                const editClient = client => {
+                    $('[name=id]').val(client._id);
+                    $('[name=name]').val(client.name);
+                }
+
+                const getClients = () => {
+                    $.ajax({
+                        url: `${api}/clients`,
+                        success: clients => {
+                            renderRows(clients);
+                            $('[name]').val('');
+                        }
+                    })
+                }
+
+                const saveClient = () => {
+                    const _id = $('[name=id]').val();
+                    const name = $('[name=name]').val()
+
+                    $.ajax({
+                        method: _id ? 'PUT' : 'POST',
+                        url: `${api}/clients/${_id}`,
+                        data: _id ? { _id, name } : { name },
+                        success: () => {
+                            getClients()
+                        }
+                    })
+                }
+
+                $(() => {
+                    getClients()
+                    $('[save]').click(saveClient);
+                })
+            </script>
+        </table>
+    </div>
 </body>
 
-</html>m
+</html>

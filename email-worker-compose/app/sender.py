@@ -1,26 +1,43 @@
 import psycopg2
-from bottle import route, run, request
+import redis
+import json
+import os
+from bottle import Bottle, request
 
-DSN = 'dbname=email_sender user=postgres password=password host=db'
-SQL = 'INSERT INTO emails (assunto, mensagem) VALUES (%s, %s)'
+class Sender(Bottle):
+    def __init__(self):
+        super().__init__()
+        self.route('/', method='POST', callback=self.send)
+        redis_host = os.getenv('REDIS_HOST', 'queue')
+        self.fila = redis.Redis(host=redis_host, port=6379, db=0)
 
-def register_message(assunto, mensagem):
-    conn = psycopg2.connect(DSN)
-    cursor = conn.cursor()
-    cursor.execute(SQL, (assunto, mensagem))
-    conn.commit()
-    cursor.close()
-    conn.close()
+        db_host = os.getenv('DB_HOST', 'db')
+        db_user = os.getenv('DB_USER', 'postgres')
+        db_name = os.getenv('DB_NAME', 'email_sender')
+        db_password = os.getenv('DB_PASSWORD', 'password')
+        DSN = f'dbname={db_name} user={db_user} password={db_password} host={db_host}'
+        self.conn = psycopg2.connect(DSN)
 
-    print(f'Mensagem registrada: {assunto} - {mensagem}')
+    def register_message(self, assunto, mensagem):
+        SQL = 'INSERT INTO emails (assunto, mensagem) VALUES (%s, %s)'
+        cursor = self.conn.cursor()
+        cursor.execute(SQL, (assunto, mensagem))
+        self.conn.commit()
+        cursor.close()
+        self.conn.close()
 
-@route('/', method='POST')
-def send():
-    assunto = request.forms.get('assunto')
-    mensagem = request.forms.get('mensagem')
+        mensagem = { 'mensagem': mensagem, 'assunto': assunto }
+        self.fila.rpush('sender', json.dumps(mensagem))
 
-    register_message(assunto, mensagem)
-    return f'Email enviado com assunto: {assunto} e mensagem: {mensagem}'
+        print(f'Mensagem registrada: {assunto} - {mensagem}')
+
+    def send(self):
+        assunto = request.forms.get('assunto')
+        mensagem = request.forms.get('mensagem')
+
+        self.register_message(assunto, mensagem)
+        return f'Email enviado com assunto: {assunto} e mensagem: {mensagem}'
 
 if __name__ == '__main__':
-    run(host='0.0.0.0', port=8080, debug=True)
+    sender = Sender()
+    sender.run(host='0.0.0.0', port=8080, debug=True)

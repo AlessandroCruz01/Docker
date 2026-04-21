@@ -4,6 +4,7 @@ volumes:
 networks:
   banco:
   web:
+  fila:
 services:
   db:
     image: postgres:9.6
@@ -40,5 +41,27 @@ services:
     networks:
       - banco
       - web
+      - fila
     depends_on:
       - db
+      - queue
+    environment:
+      DB_NAME: email_sender
+      DB_USER: postgres
+      DB_PASSWORD: password
+      DB_HOST: db
+      REDIS_HOST: queue
+  queue:
+    image: redis:3.2
+    networks:
+      - fila
+  worker:
+    build: worker
+    volumes:
+      - ./worker:/worker
+    working_dir: /worker
+    command: ./worker.py
+    networks:
+      - fila
+    depends_on:
+      - queue
